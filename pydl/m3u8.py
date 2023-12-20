@@ -10,8 +10,8 @@ from aiohttp import ClientSession
 from aiohttp import TCPConnector
 from aiohttp_socks import ProxyConnector
 
-from .api import task_creat, task_comsume, task_status, download_mini, size
-from .utils import parse_url, resource_path, resource_name, resource_dir, loaddata
+from .api import task_creat, task_comsume, task_status, download_mini, size, download
+from .utils import parse_url, resource_path, resource_name, resource_dir, loaddata, clean_url
 
 
 async def parse_m3u8(url: str, path: str, session: ClientSession, result: list=[])->bool:
@@ -44,7 +44,7 @@ async def parse_m3u8(url: str, path: str, session: ClientSession, result: list=[
                         key_uri = f"{url_data.scheme}://{url_data.netloc}{key_uri}"
                     else:
                         key_uri = f"{url_data.scheme}://{url_data.netloc}{resource_dir(url_data.path)}/{key_uri}"
-                result.append({"url": key_uri, "path": f"{relate_path}/{content}"})
+                result.append({"url": key_uri, "path": f"{relate_path}/{resource_name(key_uri)}"})
         if line.startswith("#EXTINF"):
             pass
         if not line.startswith("#"):
@@ -57,6 +57,7 @@ async def parse_m3u8(url: str, path: str, session: ClientSession, result: list=[
                     if line_url_data.path.startswith(resource_dir(url_data.path)):
                         content = line_url_data.path[len(resource_dir(url_data.path))+1:]
             else:
+                line = clean_url(line)
                 line_uri = f"{url_data.scheme}://{url_data.netloc}{resource_dir(url_data.path)}/{line}"
                 if line.startswith("/"):
                     line_uri = f"{url_data.scheme}://{url_data.netloc}{line}"
@@ -69,9 +70,9 @@ async def parse_m3u8(url: str, path: str, session: ClientSession, result: list=[
                 await parse_m3u8(line_uri, f"{relate_path}/{content}", session, result)
         contents.append(content)
         if line.startswith("#EXT-X-ENDLIST"):
-            with open(path, "w", encoding="utf-8") as f:
-                f.write( "\n".join(contents) + "\n")
             break
+    with open(path, "w", encoding="utf-8") as f:
+        f.write( "\n".join(contents) + "\n")
     return True
 
 async def download_m3u8(url: str, outputPath: str, *, proxy: str=None, timeout: int=300, chunkSize: int = 6059, threadNum: int = 22, verbose: bool=False):
@@ -160,21 +161,26 @@ async def calc_ts_size(outputPath: str, session: ClientSession, infos: dict, thr
     await asyncio.gather(*tasks_working)
     logging.info("获取文件大小完成")
 
-
-def main_m3u8():
-    from logger import getLogger
-    getLogger()
-    # url = "https://la3.killcovid2021.com/m3u8/907823/907823.m3u8"
-    # url = "https://askzycdn.com/20231124/X55udrAS/2000kb/hls/index.m3u8"
-    # url = "https://vip3.lbbf9.com/20231129/9PyUSSFA//700kb/hls/index.m3u8"	
-    # url = "https://video56.zdavsp.com/video/20230613/6ab714fed9a9cb653d6eeec3937b70d6/index.m3u8"
-    # url = "https://videozmwbf.0afaf5e.com/decry/vd/20231126/MDZhZmU0ND/151813/720/libx/hls/encrypt/index.m3u8"
-    url = "https://la3.killcovid2021.com/m3u8/907759/907759.m3u8"
-
-    outputPath = f"dist/{resource_path(url)}"
-    start_time = time.time()
-    asyncio.run(download_m3u8(url, outputPath, proxy="socks5://127.0.0.1:1080", verbose=True))
-    logging.info(f"程序执行时间为 {time.time()-start_time} 秒")
-
-if __name__ == '__main__':
-    main_m3u8()
+async def new_m3u8_infos(url: str, outputPath: str, session: ClientSession, chunkSize: int = 60590, threadNum: int = 22, verbose: bool=False)->dict:
+    infos = {}
+    result = []
+    await parse_m3u8(url, outputPath, session, result)
+    # print(result)
+    # 构建infos
+    for item in result:
+        item_url = item["url"]
+        info = {
+            "Key": item_url,
+            "Url": item_url,
+            "Output": item["path"],
+            "Start": 0,
+            "Length": 0,
+            "DownLen": 0,
+            "Scale": 0.0,
+            "Status": -1,
+            "Error": None,
+            "Retry": 10
+        }
+        infos[item_url] = info
+    await calc_ts_size(outputPath, session, infos, threadNum, verbose=verbose)
+    return infos
