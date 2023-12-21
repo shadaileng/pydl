@@ -43,8 +43,6 @@ async def download_task(info: dict, session: ClientSession, processFunc: Callabl
                 _start = 0
                 if range:
                     _start = int(range.split("/")[0].split("-")[0].split(" ")[1])
-                    length = int(range.split("/")[1])
-                    info["Length"] = length
                 fp.seek(_start, 0)
                 while True:
                     chunk = await resp.content.read(chunk_size)
