@@ -7,7 +7,7 @@ import time
 import copy
 import base64
 
-from .utils import byteunit, dumpdata
+from .utils import byteunit, dumpdata, loaddata
 from aiohttp import ClientSession
 from aiohttp import TCPConnector
 from aiohttp_socks import ProxyConnector
@@ -25,6 +25,11 @@ async def download_task(info: dict, session: ClientSession, processFunc: Callabl
     try:
         logging.info(f"[{task_id}][+]{url}: {info['Key']}")
         async with session.get(url, headers=_headers) as resp:
+            if resp.status not in (200, 206):
+                logging.error(f"[{task_id}][-]{url}: {resp.status}")
+                info["Error"] = f"status is {resp.status}"
+                info["Status"] = -1
+                return
             # logging.info(f"[{task_id}]{[url, _headers, resp.headers]}")
             if not os.path.exists(outputPath):
                 if len(os.path.dirname(outputPath)) > 0 and not os.path.exists(os.path.dirname(outputPath)):
@@ -73,7 +78,7 @@ async def size(url: str, session: ClientSession, *, headers: dict={})-> (int, bo
         return 0, False
 
 async def task_comsume(task_id: int, session: ClientSession, tasks: asyncio.Queue, status: asyncio.Queue, create: asyncio.Queue):
-    while not tasks.empty():
+    while True:
         info = await tasks.get()
         if info is None:
             logging.info(f"tasks recive None, exit the task_comsume_{ task_id }")
@@ -82,6 +87,7 @@ async def task_comsume(task_id: int, session: ClientSession, tasks: asyncio.Queu
             continue
         await download_task(info, session, status.put, task_id = task_id)
         await create.put(1)
+        # logging.info(f"task_comsume_{ task_id } put 1")
     logging.info(f"task_comsume_{ task_id } exit")
 
 async def task_creat(infos: dict, threadNum: int, tasks: asyncio.Queue, status: asyncio.Queue, create: asyncio.Queue):
@@ -95,6 +101,7 @@ async def task_creat(infos: dict, threadNum: int, tasks: asyncio.Queue, status: 
     
     while not flag:
         creat_info = await create.get()
+        # logging.info(f"task_creat get 1")
         if creat_info is None: break
         flag = True
         for key, info in infos.items():
@@ -107,7 +114,7 @@ async def task_creat(infos: dict, threadNum: int, tasks: asyncio.Queue, status: 
     logging.info(f"task_creat exit")
     # 所有运行中任务已结束 关闭任务队列
     # logging.info(f"All download task finished, put {threadNum} None into tasks")
-    # await asyncio.gather(*[tasks.put(None) for i in range(threadNum)])
+    await asyncio.gather(*[tasks.put(None) for i in range(threadNum)])
     # 所有下载任务完成 关闭status队列
     logging.info("All download task finished, put None into status")
     await status.put(None)
@@ -200,3 +207,44 @@ async def download_mini(url: str, path: str, session: ClientSession)->bool:
         logging.warning(f'[-]failed to dowload: {url}, {info["Error"]}')
         return False
     return True
+
+
+async def download(url: str, outputPath: str, newInfoCB: Callable, proxy: str=None, timeout: int=300, chunkSize: int = 60590, threadNum: int = 22, verbose: bool=False):
+    connector = TCPConnector(ssl=False)
+    if proxy:
+        logging.info(f'[+]proxy: {proxy}')
+        connector = ProxyConnector.from_url(proxy, ssl=False)
+    timeout = {'total': timeout, 'connect': None, 'sock_connect': None, 'sock_read': None}
+    async with aiohttp.ClientSession(connector=connector, timeout=aiohttp.ClientTimeout(**timeout)) as session:
+        infos = loaddata(f"{outputPath}.json")
+        if not infos:
+            infos = await newInfoCB(url, outputPath, session, chunkSize=chunkSize, threadNum=threadNum, verbose=verbose)
+        # logging.info(infos)
+        # return        
+        if len(infos) < threadNum:
+            threadNum = len(infos)
+        for key, info in infos.items():
+            if info["Status"] in (-2, 0):
+                info["Status"] = -1
+                info["Retry"] = 10
+                info["Error"] = None
+
+        tasks = asyncio.Queue(threadNum)
+        create = asyncio.Queue()
+        status = asyncio.Queue()
+        download_tasks = []
+        for index in range(threadNum):
+            download_tasks.append(task_comsume(index, session, tasks, status, create))
+        logging.info("开始下载")
+        tasks_working = [task_creat(infos, threadNum, tasks, status, create), task_status(outputPath, infos, status, verbose=verbose)] + download_tasks
+        await asyncio.gather(*tasks_working)
+        logging.info("下载完成")
+
+def get_session(proxy: str=None, timeout: int=300)->ClientSession:
+    connector = TCPConnector(ssl=False)
+    if proxy:
+        logging.info(f'[+]proxy: {proxy}')
+        connector = ProxyConnector.from_url(proxy, ssl=False)
+    timeout = {'total': timeout, 'connect': None, 'sock_connect': None, 'sock_read': None}
+    return ClientSession(connector=connector, timeout=aiohttp.ClientTimeout(**timeout))
+        

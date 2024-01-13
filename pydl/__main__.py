@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 import asyncio
 
-from .m3u8 import download_m3u8
-from .download import download, download_sync
-from .utils import resource_path, resource_name
+from . import api, utils, m3u8, download
 from os import path
 
 
@@ -23,11 +21,11 @@ if __name__ == "__main__":
         from .logger import getLogger
         getLogger()
     if args.mode == "file": 
-        outputPath = path.join(args.dist, resource_name(args.url))
-        asyncio.run(download(args.url, outputPath, proxy=args.proxy, verbose=args.is_verbose))
+        outputPath = path.join(args.dist, utils.resource_name(args.url))
+        asyncio.run(api.download(args.url, outputPath, download.new_file_infos, proxy=args.proxy, verbose=args.is_verbose))
     elif args.mode == "m3u8":
-        outputPath = path.join(args.dist, resource_path(args.url))
-        asyncio.run(download_m3u8(args.url, outputPath, proxy=args.proxy, verbose=args.is_verbose))
+        outputPath = path.join(args.dist, utils.resource_path(args.url))
+        asyncio.run(api.download(args.url, outputPath, m3u8.new_m3u8_infos, proxy=args.proxy, verbose=True))
     else:
         print("mode error")
         exit(1)

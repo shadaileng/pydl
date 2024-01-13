@@ -94,6 +94,24 @@ async def download(url: str, outputPath: str, *, proxy: str=None, timeout: int=3
         await asyncio.gather(*tasks_working)
         logging.info("下载完成")
 
+async def new_file_infos(url: str, outputPath: str, session: ClientSession, *, chunkSize: int=60950, threadNum: int = 22, verbose: bool=False)->dict:
+    length, status = await size(url, session)
+    # length = 14019
+    # length, status = 0, True
+    if not status:
+        logging.warning(f'[-]failed to head: {url}')
+        return
+    if length < 0:
+        length = 0
+    if not os.path.exists(outputPath):
+        if len(os.path.dirname(outputPath)) > 0 and not os.path.exists(os.path.dirname(outputPath)):
+            os.makedirs(os.path.dirname(outputPath), exist_ok=True)
+        fp = open(outputPath, "wb")
+        fp.truncate(length)
+        fp.close()
+    return await newInfos(url, outputPath, length, chunkSize)
+
+
 async def download_sync(url: str, outputPath: str, *, proxy: str=None, timeout: int=300):
     connector = TCPConnector(ssl=False)
     if proxy:
@@ -102,18 +120,3 @@ async def download_sync(url: str, outputPath: str, *, proxy: str=None, timeout: 
     timeout = {'total': timeout, 'connect': None, 'sock_connect': None, 'sock_read': None}
     async with aiohttp.ClientSession(connector=connector, timeout=aiohttp.ClientTimeout(**timeout)) as session:
         return await download_mini(url, outputPath, session)
-
-def main():
-    from logger import getLogger
-    getLogger()
-    # url = "https://la3.killcovid2021.com/m3u8/907823/907823.m3u8"
-    url = "https://askzycdn.com/20231124/X55udrAS/2000kb/hls/index.m3u8"
-    # url = "https://la3.killcovid2021.com/m3u8/907823/9078230.ts"
-    outputPath = f"dist/{resource_path(url)}"
-    start_time = time.time()
-    asyncio.run(download(url, outputPath, proxy="socks5://127.0.0.1:1080", verbose=True))
-    # asyncio.run(download_sync(url, outputPath, proxy="socks5://127.0.0.1:1080"))
-    logging.info(f"程序执行时间为 {time.time()-start_time} 秒")
-
-if __name__ == '__main__':
-    main()
