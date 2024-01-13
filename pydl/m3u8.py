@@ -38,13 +38,32 @@ async def parse_m3u8(url: str, path: str, session: ClientSession, result: list=[
             key_uri = [item for item in line[10:].split(",") if item.startswith("URI")]
             if len(key_uri) == 1:
                 key_uri = key_uri[0][5:-1]
-                content = content.replace(key_uri, resource_name(key_uri))
-                if not key_uri.startswith("http"):
+                line_content = key_uri
+                # content = line.replace(key_uri, resource_name(key_uri))
+                if key_uri.startswith("http"):
+                    pass
+                    line_content = resource_path(key_uri)
+                    # content = resource_path(key_uri)
+                    line_url_data = parse_url(key_uri)
+                    if line_url_data.netloc == url_data.netloc:
+                        line_content = line_url_data.path
+                        # content = line_url_data.path
+                        if line_url_data.path.startswith(resource_dir(url_data.path)):
+                            # content = line_url_data.path[len(resource_dir(url_data.path))+1:]
+                            line_content = line_url_data.path[len(resource_dir(url_data.path))+1:]
+                    pass
+                else:
+                    key_uri = clean_url(key_uri)
+                    line_uri = f"{url_data.scheme}://{url_data.netloc}{resource_dir(url_data.path)}/{key_uri}"
                     if key_uri.startswith("/"):
-                        key_uri = f"{url_data.scheme}://{url_data.netloc}{key_uri}"
-                    else:
-                        key_uri = f"{url_data.scheme}://{url_data.netloc}{resource_dir(url_data.path)}/{key_uri}"
-                result.append({"url": key_uri, "path": f"{relate_path}/{resource_name(key_uri)}"})
+                        line_uri = f"{url_data.scheme}://{url_data.netloc}{key_uri}"
+                        line_content = key_uri[1:]
+                        # content = line.replace(key_uri, key_uri[1:])
+                        if key_uri.startswith(resource_dir(url_data.path)):
+                            line_content = key_uri[len(resource_dir(url_data.path))+1:]
+                            # content = line.replace(key_uri, key_uri[len(resource_dir(url_data.path))+1:])
+                content = line.replace(key_uri, line_content)
+                result.append({"url": line_uri, "path": f"{relate_path}/{line_content}"})
         if line.startswith("#EXTINF"):
             pass
         if not line.startswith("#"):
