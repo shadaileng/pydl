@@ -27,7 +27,8 @@ def main_m3u8():
     url = "https://jkunbf.com/20240109/893YFIza/2000kb/hls/index.m3u8"
     outputPath = f"dist/{utils.resource_path(url)}"
     start_time = time.time()
-    asyncio.run(api.download(url, outputPath, m3u8.new_m3u8_infos, proxy="socks5://127.0.0.1:1080", verbose=True))
+    result = asyncio.run(api.download(url, outputPath, m3u8.new_m3u8_infos, proxy="socks5://127.0.0.1:1080", verbose=True))
+    logging.info(f"result: {result}")
     logging.info(f"程序执行时间为 {time.time()-start_time} 秒")
 
 
