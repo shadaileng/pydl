@@ -239,6 +239,7 @@ async def download(url: str, outputPath: str, newInfoCB: Callable, proxy: str=No
         tasks_working = [task_creat(infos, threadNum, tasks, status, create), task_status(outputPath, infos, status, verbose=verbose)] + download_tasks
         await asyncio.gather(*tasks_working)
         logging.info("下载完成")
+    return loaddata(f"{outputPath}.status")
 
 def get_session(proxy: str=None, timeout: int=300)->ClientSession:
     connector = TCPConnector(ssl=False)
